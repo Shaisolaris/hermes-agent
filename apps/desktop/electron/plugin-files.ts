@@ -39,6 +39,7 @@ import {
   overlapsByIdentity,
   pathTools,
   pluginKey,
+  protectedIdentityWithin,
   realRoots,
   systemRoots,
   wslProtectedPath
@@ -265,6 +266,14 @@ export function createPluginFiles(deps: PluginFilesDeps): PluginFiles {
       }
     }
 
+    // Hermes data mounted inside the folder keeps an inside path; its
+    // filesystem identity gives it away.
+    const refuseMounted = async (real: string) => {
+      if (await protectedIdentityWithin(real, root, avoid)) {
+        refuse('protected', 'That path is Hermes data mounted inside the folder and cannot be used by a plugin.')
+      }
+    }
+
     if (parts.length === 0) {
       return { root, parts, parent: null, entry: root, target: root, stat: await fs.promises.stat(root) }
     }
@@ -281,6 +290,8 @@ export function createPluginFiles(deps: PluginFilesDeps): PluginFiles {
     const lstat = await lstatOrNull(entry)
 
     if (!lstat) {
+      await refuseMounted(parent)
+
       return { root, parts, parent, entry, target: entry, stat: null }
     }
 
@@ -294,8 +305,17 @@ export function createPluginFiles(deps: PluginFilesDeps): PluginFiles {
 
     guard(target)
     await refusePseudo(target)
+    await refuseMounted(target)
 
-    return { root, parts, parent, entry, target, stat: await fs.promises.stat(target) }
+    // The realpath itself, not followed: a link here now means the path was
+    // swapped after it was resolved. The ops re-check it after they open.
+    const stat = await fs.promises.lstat(target)
+
+    if (stat.isSymbolicLink()) {
+      return refuse('outside-folder', 'The file changed while it was being checked.')
+    }
+
+    return { root, parts, parent, entry, target, stat }
   }
 
   const OPS = createPluginFileOps({ resolve, inside, segments, trashItem: deps.trashItem })

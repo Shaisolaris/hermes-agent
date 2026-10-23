@@ -20,7 +20,7 @@ const READ_CHUNK_BYTES = 1024 * 1024
 const SENSITIVE_DIRS = new Set(['.aws', '.gnupg', '.ssh'])
 // Non-blocking so a FIFO or device that slipped in cannot park a main-process
 // worker; no-follow so a link swapped in for an existing file is refused.
-const READ_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0)
+const READ_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK ?? 0) | (fs.constants.O_NOFOLLOW ?? 0)
 const UPDATE_FLAGS = fs.constants.O_RDWR | (fs.constants.O_NONBLOCK ?? 0) | (fs.constants.O_NOFOLLOW ?? 0)
 
 const IMAGE_MIME: Record<string, string> = {
@@ -141,6 +141,18 @@ function refuseNonPlain(stat: fs.Stats) {
   }
 }
 
+// The opened file must be the one that was checked AND still sit at the
+// checked path inside the folder: a parent folder swapped for a link after
+// `resolve` makes the same path open a file elsewhere.
+async function refuseMoved(resolved: Resolved, opened: fs.Stats) {
+  const real = await realpathOrNull(resolved.target)
+  const now = real === resolved.target ? await lstatOrNull(real) : null
+
+  if (!sameFile(opened, resolved.stat!) || !now || !sameFile(now, opened)) {
+    refuse('outside-folder', 'The file changed while it was being opened.')
+  }
+}
+
 // Read at most `maxBytes` through a handle that must still be the checked
 // file. The cap counts bytes read, not the size stat reported (0 for a pseudo
 // file), so a file is refused past the cap whatever it claims.
@@ -149,11 +161,7 @@ async function readChecked(resolved: Resolved, maxBytes: number): Promise<Buffer
 
   try {
     const opened = await handle.stat()
-
-    if (!sameFile(opened, resolved.stat!)) {
-      refuse('outside-folder', 'The file changed while it was being opened.')
-    }
-
+    await refuseMoved(resolved, opened)
     refuseNonPlain(opened)
     const chunks: Buffer[] = []
     let total = 0
@@ -187,10 +195,9 @@ async function writeChecked(resolved: Resolved, text: string) {
     const handle = await fs.promises.open(resolved.target, UPDATE_FLAGS)
 
     try {
-      if (!sameFile(await handle.stat(), resolved.stat)) {
-        refuse('outside-folder', 'The file changed while it was being opened.')
-      }
-
+      const opened = await handle.stat()
+      await refuseMoved(resolved, opened)
+      refuseNonPlain(opened)
       await handle.truncate(0)
       await handle.writeFile(text, 'utf8')
     } finally {
@@ -237,6 +244,7 @@ export interface Resolved {
   entry: string
   /** What reads/writes act on: the entry's realpath (inside the folder). */
   target: string
+  /** `lstat` of `target` (null when the entry does not exist yet). */
   stat: fs.Stats | null
 }
 

@@ -163,9 +163,12 @@ describe('a swap between the check and the open is refused', () => {
       fs.symlinkSync(hermesHome, sub)
     })
 
+    // Refused either as outside the folder or, when the swap lands before the
+    // identity check, as Hermes data.
     expect(
-      await files.run('plexus', { op: 'writeText', folder: id, path: 'sub/pwn.txt', text: 'pwned' })
-    ).toMatchObject({ ok: false, error: 'outside-folder' })
+      ((await files.run('plexus', { op: 'writeText', folder: id, path: 'sub/pwn.txt', text: 'pwned' })) as { error?: string })
+        .error
+    ).toMatch(/^(outside-folder|protected)$/)
     expect(fs.existsSync(path.join(hermesHome, 'pwn.txt'))).toBe(false)
   })
 
@@ -193,6 +196,110 @@ describe('a swap between the check and the open is refused', () => {
       await files.run('plexus', { op: 'writeText', folder: id, path: 'notes/a.md', text: 'pwned' })
     ).toMatchObject({ ok: false })
     expect(fs.readFileSync(path.join(hermesHome, 'config.yaml'), 'utf8')).toBe('model: secret-config\n')
+  })
+})
+
+describe('a swap before the final look is refused too', () => {
+  // Stands in for another process acting right after `resolve` realpath'd the
+  // target, before it took the identity the open is compared against.
+  const afterRealpath = (checked: string, swap: () => void) => {
+    const original = fs.promises.realpath.bind(fs.promises) as (target: fs.PathLike) => Promise<string>
+    let done = false
+
+    vi.spyOn(fs.promises, 'realpath').mockImplementation((async (target: fs.PathLike) => {
+      try {
+        return await original(target)
+      } finally {
+        if (!done && String(target) === checked) {
+          done = true
+          swap()
+        }
+      }
+    }) as never)
+  }
+
+  it.runIf(posix)('a checked file swapped for a link to Hermes data: not read, not written', async () => {
+    const id = await grantVault()
+    const note = path.join(vault, 'notes', 'a.md')
+
+    const swap = () => {
+      fs.rmSync(note)
+      fs.symlinkSync(path.join(hermesHome, 'config.yaml'), note)
+    }
+
+    afterRealpath(note, swap)
+    const read = await files.run('plexus', { op: 'readText', folder: id, path: 'notes/a.md' })
+
+    expect(read).toMatchObject({ ok: false })
+    expect(JSON.stringify(read)).not.toContain('secret-config')
+
+    vi.restoreAllMocks()
+    fs.rmSync(note)
+    fs.writeFileSync(note, '# A\n')
+    afterRealpath(note, swap)
+
+    expect(await files.run('plexus', { op: 'writeText', folder: id, path: 'notes/a.md', text: 'pwned' })).toMatchObject({
+      ok: false
+    })
+    expect(fs.readFileSync(path.join(hermesHome, 'config.yaml'), 'utf8')).toBe('model: secret-config\n')
+  })
+
+  it.runIf(posix)('a parent folder swapped for a link into the Hermes home: not read, not written', async () => {
+    const id = await grantVault()
+    fs.writeFileSync(path.join(hermesHome, 'a.md'), 'hermes-secret\n')
+    const notes = path.join(vault, 'notes')
+    const note = path.join(notes, 'a.md')
+
+    const swap = () => {
+      fs.renameSync(notes, path.join(vault, 'notes-old'))
+      fs.symlinkSync(hermesHome, notes)
+    }
+
+    afterRealpath(note, swap)
+    const read = await files.run('plexus', { op: 'readText', folder: id, path: 'notes/a.md' })
+
+    expect(read).toMatchObject({ ok: false })
+    expect(JSON.stringify(read)).not.toContain('hermes-secret')
+
+    vi.restoreAllMocks()
+    fs.rmSync(notes)
+    fs.renameSync(path.join(vault, 'notes-old'), notes)
+    afterRealpath(note, swap)
+
+    expect(await files.run('plexus', { op: 'writeText', folder: id, path: 'notes/a.md', text: 'pwned' })).toMatchObject({
+      ok: false
+    })
+    expect(fs.readFileSync(path.join(hermesHome, 'a.md'), 'utf8')).toBe('hermes-secret\n')
+  })
+})
+
+describe('Hermes data mounted inside a granted folder', () => {
+  // Stands in for a bind mount of the Hermes home at Vault/mounted (present
+  // before the grant or added after): same filesystem identity, inside path.
+  it('refuses every op under it', async () => {
+    const mounted = path.join(vault, 'mounted')
+    fs.mkdirSync(mounted)
+    fs.writeFileSync(path.join(mounted, 'config.yaml'), 'mirror\n')
+    const id = await grantVault()
+    const home = fs.statSync(hermesHome)
+    const original = fs.promises.stat.bind(fs.promises) as (target: fs.PathLike, options?: never) => Promise<fs.Stats>
+
+    vi.spyOn(fs.promises, 'stat').mockImplementation((async (target: fs.PathLike, options?: never) => {
+      const real = await original(target, options)
+
+      return String(target) === mounted ? Object.assign(Object.create(Object.getPrototypeOf(real)), real, { dev: home.dev, ino: home.ino }) : real
+    }) as never)
+
+    for (const request of [
+      { op: 'readText', path: 'mounted/config.yaml' },
+      { op: 'list', path: 'mounted' },
+      { op: 'stat', path: 'mounted/config.yaml' },
+      { op: 'writeText', path: 'mounted/new.md', text: 'x' }
+    ] as const) {
+      expect(await files.run('plexus', { ...request, folder: id } as never)).toMatchObject({ ok: false, error: 'protected' })
+    }
+
+    expect(fs.existsSync(path.join(mounted, 'new.md'))).toBe(false)
   })
 })
 

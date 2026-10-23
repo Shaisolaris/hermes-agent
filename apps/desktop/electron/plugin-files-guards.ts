@@ -220,3 +220,24 @@ export async function overlapsByIdentity(candidate: string, roots: string[]): Pr
 
   return false
 }
+
+/**
+ * True when `target`, or a folder between it and `root`, is one of `roots` by
+ * filesystem identity: a bind mount of the Hermes home inside a granted folder
+ * keeps an inside path but is the protected folder itself.
+ */
+export async function protectedIdentityWithin(target: string, root: string, roots: string[]): Promise<boolean> {
+  const ids = new Set((await Promise.all(roots.map(identity))).filter((id): id is string => id !== null))
+
+  for (let current = target; ; current = path.dirname(current)) {
+    const id = await identity(current)
+
+    if (id && ids.has(id)) {
+      return true
+    }
+
+    if (current === root || path.dirname(current) === current) {
+      return false
+    }
+  }
+}
