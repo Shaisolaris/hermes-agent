@@ -42,4 +42,20 @@ describe('PluginFolderAccess', () => {
     expect(door.revoke).toHaveBeenCalledWith('plexus', 'f1')
     await waitFor(() => expect(screen.queryByText('/home/me/Vault')).toBeNull())
   })
+
+  it('a failed read says so and can be retried, instead of looking like no access', async () => {
+    grants.splice(0, grants.length, { grantedAt: 'x', id: 'f1', name: 'Vault', path: '/home/me/Vault' })
+    door.grants.mockRejectedValueOnce(new Error('EACCES: grants.json'))
+    ;(window as unknown as { hermesDesktop: unknown }).hermesDesktop = { pluginFiles: door }
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PluginFolderAccess name="Plexus" plugin={{ id: 'plexus' } as PluginRecord} />
+      </QueryClientProvider>
+    )
+
+    expect(await screen.findByText('Could not load the folders shared with Plexus.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByText('/home/me/Vault')).toBeTruthy()
+  })
 })

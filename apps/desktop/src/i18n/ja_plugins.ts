@@ -56,6 +56,7 @@ export const jaPluginsTab = {
     pickerTitle: (name: string) => `${name} 用のフォルダーを選択`,
     pickerButton: 'アクセスを許可',
     refusedProtected: (name: string) =>
-      `${name} はこのフォルダーを使用できません。Hermes の設定、キー、またはプラグインデータが含まれています。それらを含まないフォルダーを選択してください。`
+      `${name} はこのフォルダーを使用できません。Hermes の設定、キー、またはプラグインデータが含まれています。それらを含まないフォルダーを選択してください。`,
+    loadFailed: (name: string) => `${name} と共有しているフォルダーを読み込めませんでした。`
   }
 } satisfies NonNullable<NonNullable<TranslationOverrides['skills']>['plugins']>

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Switch } from '@/components/ui/switch'
 import { Tip } from '@/components/ui/tooltip'
+import { revokeGrantsIfUninstalled } from '@/contrib/plugin-files'
 import { $pluginRecords, enablePackageDesktopHalf, type PluginRecord, setPluginEnabled } from '@/contrib/plugins-store'
 import { useContributions } from '@/contrib/react/use-contributions'
 import { discoverRuntimePlugins, uninstallDiskPlugin } from '@/contrib/runtime-loader'
@@ -700,13 +701,10 @@ export const PluginsTab = memo(function PluginsTab({
         if (await removeAgentPlugin(requestGateway, row.name, p.uninstallFailed(row.name), scope)) {
           notify({ kind: 'success', message: p.uninstalled(row.name) })
 
-          // A reinstall under the same id must ask for its folders again.
-          if (desktop) {
-            void window.hermesDesktop?.pluginFiles?.revoke(desktop.id)
-          }
-
-          // Prunes the app-level desktop half whose source package just went away.
-          void rescanAll(requestGateway, scope)
+          // Prunes the app-level desktop half whose source package just went
+          // away; its folder grants go with it, and only then (another profile
+          // may still install the package).
+          void rescanAll(requestGateway, scope).then(() => desktop && revokeGrantsIfUninstalled(desktop.id))
         }
       })
     },

@@ -19,17 +19,23 @@ const grantsKey = (pluginId: string) => [...PLUGIN_FOLDER_GRANTS_KEY, pluginId]
 
 /** The folders the user granted a desktop plugin through `ctx.files`, each
  *  with a Revoke that takes effect on the plugin's next call. Renders nothing
- *  when the plugin holds no grant (or the shell predates the door). */
+ *  when the plugin holds no grant (or the shell predates the door), and a
+ *  retry when the grants could not be read. */
 export function PluginFolderAccess({ plugin, name }: PluginFolderAccessProps) {
   const { t } = useI18n()
   const copy = t.skills.plugins.folderAccess
   const door = window.hermesDesktop?.pluginFiles
   const pluginId = plugin?.id ?? ''
 
-  const { data: grants = [] } = useQuery({
+  const {
+    data: grants = [],
+    isError,
+    refetch
+  } = useQuery({
     enabled: Boolean(door && pluginId),
     queryFn: () => door!.grants(pluginId),
-    queryKey: grantsKey(pluginId)
+    queryKey: grantsKey(pluginId),
+    retry: false
   })
 
   // A grant made or revoked in another window refreshes this list too.
@@ -42,6 +48,23 @@ export function PluginFolderAccess({ plugin, name }: PluginFolderAccessProps) {
       }),
     [door, pluginId]
   )
+
+  // A record the app could not read is not "no access": say so, offer a retry.
+  if (isError) {
+    return (
+      <div className="flex flex-col gap-2" data-testid={`plugin-folder-access-${pluginId}`}>
+        <div className="text-xs font-medium text-(--ui-text-secondary)">{copy.title}</div>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+            {copy.loadFailed(name)}
+          </span>
+          <Button onClick={() => void refetch()} size="xs" variant="text">
+            {t.common.retry}
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   if (!grants.length) {
     return null

@@ -4833,6 +4833,7 @@
     "skills.plugins.emptyAll",
     "skills.plugins.emptyHint",
     "skills.plugins.folderAccess.hint",
+    "skills.plugins.folderAccess.loadFailed",
     "skills.plugins.folderAccess.pickerButton",
     "skills.plugins.folderAccess.pickerTitle",
     "skills.plugins.folderAccess.refusedProtected",

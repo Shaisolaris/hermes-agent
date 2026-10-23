@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { notify } from '@/store/notifications'
 
 import { createPluginContext } from './plugin'
+import { revokeGrantsIfUninstalled } from './plugin-files'
+import { $pluginRecords, type PluginRecord } from './plugins-store'
 
 vi.mock('@/store/notifications', () => ({ notify: vi.fn(), notifyError: vi.fn() }))
 
@@ -51,5 +53,21 @@ describe('ctx.files', () => {
     expect(await files.requestFolder()).toMatchObject({ ok: false, error: 'unavailable' })
     expect(await files.list('data')).toMatchObject({ ok: false, error: 'unavailable' })
     expect(await files.folders()).toEqual([])
+  })
+})
+
+describe('grants after a package removal', () => {
+  afterEach(() => $pluginRecords.set({}))
+
+  it('keeps the grants of a desktop plugin another profile still installs', async () => {
+    $pluginRecords.set({ plexus: { id: 'plexus' } as PluginRecord })
+
+    expect(await revokeGrantsIfUninstalled('plexus')).toBe(false)
+    expect(door.revoke).not.toHaveBeenCalled()
+  })
+
+  it('drops the grants once the desktop plugin is gone', async () => {
+    expect(await revokeGrantsIfUninstalled('plexus')).toBe(true)
+    expect(door.revoke).toHaveBeenCalledWith('plexus')
   })
 })

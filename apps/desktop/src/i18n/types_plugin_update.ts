@@ -10,6 +10,7 @@ export interface PluginFolderAccessTranslations {
   pickerTitle: (name: string) => string
   pickerButton: string
   refusedProtected: (name: string) => string
+  loadFailed: (name: string) => string
 }
 
 /** Copy for updating an installed plugin (Plugins tab): catalog re-pin consent and the security-scan override,

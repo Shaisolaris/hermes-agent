@@ -78,6 +78,22 @@ const folderOf = (row: PluginFolder): PluginFolder => ({ id: row.id, name: row.n
 
 const refreshGrantList = () => void queryClient.invalidateQueries({ queryKey: PLUGIN_FOLDER_GRANTS_KEY })
 
+/** Drop a desktop plugin's folder grants once it is really gone. Removing a
+ *  package's agent half from one profile leaves the app-wide desktop half
+ *  (and its grants) in place while another profile still installs it. */
+export async function revokeGrantsIfUninstalled(pluginId: string): Promise<boolean> {
+  if ($pluginRecords.get()[pluginId]) {
+    return false
+  }
+
+  await bridge()
+    ?.revoke(pluginId)
+    .catch(() => undefined)
+  refreshGrantList()
+
+  return true
+}
+
 export function createPluginFiles(pluginId: string): PluginFiles {
   const run = async <T extends object>(request: Record<string, unknown>): Promise<PluginFilesResult<T>> => {
     const door = bridge()
