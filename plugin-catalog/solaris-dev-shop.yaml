@@ -1,0 +1,16 @@
+name: solaris-dev-shop
+repo: https://github.com/Shaisolaris/solaris-dev-shop-plugins
+sha: 0ce43cd9a550a033a40b4e1f429a6c3c138802c2
+subdir: plugin
+version: "0.68.0"
+description: 61 specialist workflows and a Chief of Staff coordinator with explicit local helpers.
+maintainer: Shaisolaris
+tier: community
+category: tools
+docs_url: https://github.com/Shaisolaris/solaris-dev-shop-plugins/tree/0ce43cd9a550a033a40b4e1f429a6c3c138802c2/plugin
+readme: true
+capabilities:
+  provides_tools: []
+  provides_hooks: []
+  provides_middleware: []
+  requires_env: []
